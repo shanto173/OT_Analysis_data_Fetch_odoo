@@ -14,7 +14,7 @@ jobs:
       ODOO_DB: ${{ secrets.ODOO_DB }}
       ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
       ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
-      GCRED_BASE64: ${{ secrets.GCRED_BASE64 }}  # Base64-encoded gcreds.json
+      GCRED_BASE64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}  # Base64-encoded gcreds.json
 
     steps:
     - name: Checkout repository
@@ -27,7 +27,7 @@ jobs:
 
     - name: Decode Google credentials
       run: |
-        echo "$GOOGLE_CREDENTIALS_B64" | base64 --decode > gcreds.json
+        echo "$GCRED_BASE64" | base64 --decode > gcreds.json
         echo "✅ Google credentials decoded"
 
     - name: Install dependencies
