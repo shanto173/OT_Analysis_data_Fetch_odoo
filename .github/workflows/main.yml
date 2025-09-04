@@ -29,7 +29,7 @@ jobs:
       ODOO_DB: ${{ secrets.ODOO_DB }}
       ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
       ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
-      GCREDS_BASE64: ${{ secrets.GCREDS_BASE64 }}
+      GCREDS_BASE64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
       FROM_DATE: ${{ github.event.inputs.from_date }}
       TO_DATE: ${{ github.event.inputs.to_date }}
     steps:
