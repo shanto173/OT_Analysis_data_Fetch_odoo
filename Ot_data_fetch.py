@@ -8,20 +8,27 @@ from gspread_dataframe import set_with_dataframe
 from google.oauth2 import service_account
 import logging as log
 import time
+import argparse
 
 # -------------------- Setup Logging --------------------
 log.basicConfig(level=log.INFO)
 
-# -------------------- Read Environment --------------------
+# -------------------- Parse command-line args --------------------
+parser = argparse.ArgumentParser()
+parser.add_argument("--from_date", required=False, help="Start date YYYY-MM-DD")
+parser.add_argument("--to_date", required=False, help="End date YYYY-MM-DD")
+args = parser.parse_args()
+
+FROM_DATE = args.from_date or os.environ.get("FROM_DATE", "2025-08-26")
+TO_DATE = args.to_date or os.environ.get("TO_DATE")
+if not TO_DATE:
+    TO_DATE = datetime.now(pytz.timezone("Asia/Dhaka")).strftime("%Y-%m-%d")
+
+# -------------------- Read Environment Variables --------------------
 ODOO_URL = os.getenv("ODOO_URL")
 DB = os.getenv("ODOO_DB")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
-
-FROM_DATE = os.environ.get("FROM_DATE", "2025-08-26")
-TO_DATE = os.environ.get("TO_DATE")
-if not TO_DATE:
-    TO_DATE = datetime.now(pytz.timezone("Asia/Dhaka")).strftime("%Y-%m-%d")
 
 MODEL = "attendance.pdf.report"
 REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
@@ -57,6 +64,11 @@ if not csrf_token:
 log.info("✅ CSRF token = %s", csrf_token)
 
 # -------------------- Google Sheet Auth --------------------
+creds_b64 = os.environ.get("GOOGLE_CREDS_B64")
+if not creds_b64:
+    raise Exception("❌ GOOGLE_CREDS_B64 secret not set.")
+with open("gcreds.json", "wb") as f:
+    f.write(base64.b64decode(creds_b64))
 creds = service_account.Credentials.from_service_account_file("gcreds.json", scopes=[
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -68,20 +80,32 @@ for company_id in COMPANY_IDS:
     company_label = "Zipper" if company_id == 1 else "Metal_Trims"
     log.info("\n--- Processing %s ---", company_label)
 
-    # -------------------- Onchange Wizard --------------------
+    # Onchange
     onchange_url = f"{ODOO_URL}/web/dataset/call_kw/{MODEL}/onchange"
     session.post(onchange_url, json={
-        "id":1,"jsonrpc":"2.0","method":"call","params":{
-            "model":MODEL,"method":"onchange","args":[[], {}, [], {}],
-            "kwargs":{"context":{"lang":"en_US","tz":"Asia/Dhaka","uid":uid,"allowed_company_ids":[company_id],"default_is_company":False}}
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "model": MODEL,
+            "method": "onchange",
+            "args": [[], {}, [], {}],
+            "kwargs": {"context": {"lang": "en_US", "tz": "Asia/Dhaka",
+                                   "uid": uid, "allowed_company_ids": [company_id],
+                                   "default_is_company": False}}
         }
     })
 
-    # -------------------- Save Wizard --------------------
+    # Save wizard
     web_save_url = f"{ODOO_URL}/web/dataset/call_kw/{MODEL}/web_save"
     resp = session.post(web_save_url, json={
-        "id":3,"jsonrpc":"2.0","method":"call","params":{
-            "model":MODEL,"method":"web_save","args":[[], {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "model": MODEL,
+            "method": "web_save",
+            "args": [[], {
                 "report_type": REPORT_TYPE,
                 "date_from": FROM_DATE,
                 "date_to": TO_DATE,
@@ -95,7 +119,9 @@ for company_id in COMPANY_IDS:
                 "department_id": False,
                 "company_all": "allcompany"
             }],
-            "kwargs":{"context":{"lang":"en_US","tz":"Asia/Dhaka","uid":uid,"allowed_company_ids":[company_id],"default_is_company":False}}
+            "kwargs": {"context": {"lang": "en_US","tz": "Asia/Dhaka",
+                                   "uid": uid,"allowed_company_ids": [company_id],
+                                   "default_is_company": False}}
         }
     })
     wizard_id = resp.json().get("result", [{}])[0].get("id")
@@ -104,12 +130,19 @@ for company_id in COMPANY_IDS:
         continue
     log.info("✅ Wizard saved, ID = %s", wizard_id)
 
-    # -------------------- Generate Report --------------------
+    # Generate report
     call_button_url = f"{ODOO_URL}/web/dataset/call_button"
     resp = session.post(call_button_url, json={
-        "id":4,"jsonrpc":"2.0","method":"call","params":{
-            "model":MODEL,"method":REPORT_BUTTON_METHOD,"args":[[wizard_id]],
-            "kwargs":{"context":{"lang":"en_US","tz":"Asia/Dhaka","uid":uid,"allowed_company_ids":[company_id],"default_is_company":False}}
+        "id": 4,
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "model": MODEL,
+            "method": REPORT_BUTTON_METHOD,
+            "args": [[wizard_id]],
+            "kwargs": {"context": {"lang": "en_US","tz": "Asia/Dhaka",
+                                   "uid": uid,"allowed_company_ids": [company_id],
+                                   "default_is_company": False}}
         }
     })
     report_name = resp.json().get("result", {}).get("report_name")
@@ -118,22 +151,28 @@ for company_id in COMPANY_IDS:
         continue
     log.info("✅ Report generated: %s", report_name)
 
-    # -------------------- Download Report --------------------
+    # Download report
     download_url = f"{ODOO_URL}/report/download"
     options = {
         "date_from": FROM_DATE, "date_to": TO_DATE,
-        "mode_company_id": company_id,
-        "department_id": False,
-        "category_id": False,
-        "employee_id": False,
-        "report_type": REPORT_TYPE,
-        "atten_type": False, "types": False, "is_company": False
+        "mode_company_id": company_id, "department_id": False,
+        "category_id": False, "employee_id": False,
+        "report_type": REPORT_TYPE, "atten_type": False,
+        "types": False, "is_company": False
     }
-    context = {"lang":"en_US","tz":"Asia/Dhaka","uid":uid,"allowed_company_ids":[company_id],
-               "active_model":MODEL,"active_id":wizard_id,"active_ids":[wizard_id],"default_is_company":False}
+    context = {
+        "lang": "en_US", "tz": "Asia/Dhaka", "uid": uid,
+        "allowed_company_ids": [company_id],
+        "active_model": MODEL, "active_id": wizard_id,
+        "active_ids": [wizard_id], "default_is_company": False
+    }
     report_path = f"/report/xlsx/{report_name}?options={json.dumps(options)}&context={json.dumps(context)}"
-    download_payload = {"data": json.dumps([report_path,"xlsx"]), "context": json.dumps(context), "token":"dummy-because-api-expects-one", "csrf_token": csrf_token}
-    resp = session.post(download_url, data=download_payload, headers={"X-CSRF-Token": csrf_token, "Referer": f"{ODOO_URL}/web"}, timeout=60)
+    download_payload = {"data": json.dumps([report_path,"xlsx"]),
+                        "context": json.dumps(context),
+                        "token": "dummy-because-api-expects-one",
+                        "csrf_token": csrf_token}
+    headers = {"X-CSRF-Token": csrf_token, "Referer": f"{ODOO_URL}/web"}
+    resp = session.post(download_url, data=download_payload, headers=headers, timeout=60)
 
     if resp.status_code == 200 and "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in resp.headers.get("content-type",""):
         filename = f"{REPORT_TYPE}_{company_label}_{FROM_DATE}_to_{TO_DATE}.xlsx"
@@ -141,25 +180,3 @@ for company_id in COMPANY_IDS:
         log.info("✅ Report downloaded as %s", filename)
     else:
         log.error("❌ Download failed %s %s", resp.status_code, resp.text[:500])
-        continue
-
-    # -------------------- Load & Paste to Google Sheet --------------------
-    df = pd.read_excel(filename)
-    if df.empty: 
-        log.warning("Skip: DataFrame is empty for %s", company_label)
-        continue
-
-    sheet_key = "1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs"
-    sheet = client.open_by_key(sheet_key)
-    if company_label == "Zipper":
-        worksheet = sheet.worksheet("ZIP_OT_DATA")
-        worksheet.batch_clear(["B1:IA1000"])
-    else:
-        worksheet = sheet.worksheet("MT_OT_DATA")
-        worksheet.batch_clear(["B1:HI1000"])
-
-    time.sleep(2)
-    set_with_dataframe(worksheet, df, row=1, col=2, include_index=False)
-    local_time = datetime.now(pytz.timezone("Asia/Dhaka")).strftime("%Y-%m-%d %H:%M:%S")
-    worksheet.update("E1", [[f"{local_time}"]])
-    log.info("✅ Data pasted & timestamp updated for %s.", company_label)
