@@ -28,7 +28,7 @@ jobs:
       ODOO_URL: ${{ secrets.ODOO_URL }}
       USERNAME: ${{ secrets.ODOO_USERNAME }}
       PASSWORD: ${{ secrets.ODOO_PASSWORD }}
-      DB: ${{ secrets.ODOO_DB }}
+      ODOO_DB: ${{ secrets.ODOO_DB }}
       GOOGLE_CREDS_B64: ${{ secrets.GOOGLE_CREDS_B64 }}
     steps:
       - name: Checkout repo
