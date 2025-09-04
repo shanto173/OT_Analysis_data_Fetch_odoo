@@ -1,62 +1,76 @@
-name: Odoo Reports Automation
+name: Odoo OT & PO Reports
 
 on:
   workflow_dispatch:
     inputs:
       script_choice:
-        description: "Select script to run"
+        description: 'Select script to run'
         required: true
-        default: "All"
+        default: 'All'
         type: choice
         options:
           - All
           - Ot_data_fetch.py
-          - purchase_orders_cleaned.py
+          - purchase_orders.py
       from_date:
-        description: "Start date (YYYY-MM-DD)"
+        description: 'Start date (YYYY-MM-DD)'
         required: false
-        default: "2025-08-26"
+        default: '2025-08-26'
       to_date:
-        description: "End date (YYYY-MM-DD, leave empty for current date)"
+        description: 'End date (YYYY-MM-DD)'
         required: false
-        default: ""
+        default: ''  # If empty, script can use current date
 
 jobs:
-  run_scripts:
+  run_reports:
     runs-on: ubuntu-latest
     env:
       ODOO_URL: ${{ secrets.ODOO_URL }}
-      ODOO_DB: ${{ secrets.ODOO_DB }}
-      ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
-      ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
-      GCREDS_BASE64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
-      FROM_DATE: ${{ github.event.inputs.from_date }}
-      TO_DATE: ${{ github.event.inputs.to_date }}
+      USERNAME: ${{ secrets.ODOO_USERNAME }}
+      PASSWORD: ${{ secrets.ODOO_PASSWORD }}
+      DB: ${{ secrets.ODOO_DB }}
+      GOOGLE_CREDS_B64: ${{ secrets.GOOGLE_CREDS_B64 }}
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt || pip install requests pandas gspread gspread-dataframe google-auth pytz openpyxl
+          pip install -r requirements.txt
+          pip install gspread oauth2client gspread_dataframe pytz requests
 
-      - name: Decode Google Credentials
+      - name: Decode Google Service Account
         run: |
-          echo "$GCREDS_BASE64" | base64 --decode > gcreds.json
+          echo "$GOOGLE_CREDS_B64" | base64 --decode > gcreds.json
 
-      - name: Run Selected Scripts
+      - name: Determine script to run
+        id: script
         run: |
-          echo "Selected script: ${{ github.event.inputs.script_choice }}"
-          if [ "${{ github.event.inputs.script_choice }}" = "All" ] || [ "${{ github.event.inputs.script_choice }}" = "Ot_data_fetch.py" ]; then
-            echo "Running OT Data Fetch..."
-            python Ot_data_fetch.py
+          if [ "${{ github.event.inputs.script_choice }}" = "All" ]; then
+            echo "RUN_ALL=true" >> $GITHUB_ENV
+          else
+            echo "RUN_ALL=false" >> $GITHUB_ENV
           fi
-          if [ "${{ github.event.inputs.script_choice }}" = "All" ] || [ "${{ github.event.inputs.script_choice }}" = "purchase_orders_cleaned.py" ]; then
-            echo "Running Purchase Orders Fetch..."
-            python purchase_orders_cleaned.py
+          echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
+          echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> $GITHUB_ENV
+          # Use current date if to_date not set
+          if [ -z "${{ github.event.inputs.to_date }}" ]; then
+            echo "TO_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+          else
+            echo "TO_DATE=${{ github.event.inputs.to_date }}" >> $GITHUB_ENV
           fi
+
+      - name: Run OT Data Fetch
+        if: env.SCRIPT == 'Ot_data_fetch.py' || env.RUN_ALL == 'true'
+        run: |
+          python Ot_data_fetch.py --from_date $FROM_DATE --to_date $TO_DATE
+
+      - name: Run Purchase Orders Fetch
+        if: env.SCRIPT == 'purchase_orders.py' || env.RUN_ALL == 'true'
+        run: |
+          python purchase_orders.py
