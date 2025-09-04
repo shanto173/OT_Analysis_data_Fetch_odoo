@@ -6,12 +6,13 @@ import pytz
 import gspread
 from gspread_dataframe import set_with_dataframe
 from google.oauth2 import service_account
+import logging as log
 import time
-
-ODOO_URL = os.environ["ODOO_URL"]
-DB = os.environ["ODOO_DB"]
-USERNAME = os.environ["ODOO_USERNAME"]
-PASSWORD = os.environ["ODOO_PASSWORD"]
+log.basicConfig(level=log.INFO)
+ODOO_URL = os.getenv("ODOO_URL")
+DB = os.getenv("ODOO_DB")
+USERNAME = os.getenv("ODOO_USERNAME")
+PASSWORD = os.getenv("ODOO_PASSWORD")
 
 MODEL = "attendance.pdf.report"
 REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
