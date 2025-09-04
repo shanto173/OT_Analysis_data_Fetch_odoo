@@ -22,8 +22,8 @@ log.basicConfig(level=log.INFO)
 # ----------------------------
 ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
+ODOO_USERNAME = os.getenv("USERNAME")
+ODOO_PASSWORD = os.getenv("PASSWORD")
 
 # ----------------------------
 # Field mapping

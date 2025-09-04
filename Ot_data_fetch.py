@@ -15,8 +15,8 @@ log.basicConfig(level=log.INFO)
 # -------------------- Read Environment --------------------
 ODOO_URL = os.getenv("ODOO_URL")
 DB = os.getenv("ODOO_DB")
-USERNAME = os.getenv("ODOO_USERNAME")
-PASSWORD = os.getenv("ODOO_PASSWORD")
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
 
 FROM_DATE = os.environ.get("FROM_DATE", "2025-08-26")
 TO_DATE = os.environ.get("TO_DATE")
