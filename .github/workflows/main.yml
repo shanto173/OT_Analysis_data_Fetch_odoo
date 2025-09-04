@@ -58,7 +58,6 @@ jobs:
           fi
           echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
           echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> $GITHUB_ENV
-          # Use current date if to_date not set
           if [ -z "${{ github.event.inputs.to_date }}" ]; then
             echo "TO_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
           else
