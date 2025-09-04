@@ -1,0 +1,40 @@
+name: Odoo Purchase Orders → Google Sheet
+
+on:
+  workflow_dispatch:    # Manual trigger
+  schedule:
+    - cron: "0 6 * * *" # Every day at 6:00 AM UTC
+
+jobs:
+  odoo_export:
+    runs-on: ubuntu-latest
+
+    env:
+      ODOO_URL: ${{ secrets.ODOO_URL }}
+      ODOO_DB: ${{ secrets.ODOO_DB }}
+      ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
+      ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
+      GCRED_BASE64: ${{ secrets.GCRED_BASE64 }}  # Base64-encoded gcreds.json
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Decode Google credentials
+      run: |
+        echo "$GOOGLE_CREDENTIALS_B64" | base64 --decode > gcreds.json
+        echo "✅ Google credentials decoded"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas gspread gspread_dataframe google-auth pytz openpyxl
+
+    - name: Run Odoo download + GSheet script
+      run: |
+        python PO_data_fetch.py
