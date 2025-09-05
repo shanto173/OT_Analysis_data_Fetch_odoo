@@ -26,7 +26,7 @@ DATE_TO = os.getenv("TO_DATE", "2025-09-25")
 COMPANY_IDS = [1, 3]  # 1 = Zipper, 3 = Metal Trims
 
 # ========= GOOGLE SHEET CONFIG ==========
-SERVICE_ACCOUNT_FILE = "gcread.json"   # GitHub Action will create this from secret
+SERVICE_ACCOUNT_FILE = "gcreds.json"   # GitHub Action will create this from secret
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
