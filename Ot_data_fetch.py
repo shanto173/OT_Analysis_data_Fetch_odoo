@@ -9,6 +9,7 @@ import pytz
 import time
 from datetime import datetime
 import os
+import argparse
 
 # ========= CONFIG ==========
 ODOO_URL = os.getenv("ODOO_URL")
@@ -20,8 +21,13 @@ MODEL = "attendance.pdf.report"
 REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
 
 # -------- Dates (from GitHub Action inputs or default) --------
-DATE_FROM = os.getenv("FROM_DATE", "2025-08-26")
-DATE_TO = os.getenv("TO_DATE", "2025-09-25")
+parser = argparse.ArgumentParser()
+parser.add_argument("--from_date", type=str, default="2025-07-26")
+parser.add_argument("--to_date", type=str, default=datetime.today().strftime("%Y-%m-%d"))
+args = parser.parse_args()
+
+DATE_FROM = args.from_date
+DATE_TO = args.to_date
 
 COMPANY_IDS = [1, 3]  # 1 = Zipper, 3 = Metal Trims
 

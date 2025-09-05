@@ -15,7 +15,7 @@ on:
       from_date:
         description: 'Start date (YYYY-MM-DD)'
         required: false
-        default: '2025-08-26'
+        default: '2025-07-26'
       to_date:
         description: 'End date (YYYY-MM-DD)'
         required: false
