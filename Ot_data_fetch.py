@@ -193,7 +193,7 @@ for company_id in COMPANY_IDS:
         print(f"✅ Report downloaded as {filename}")
 
         # ---------------------- Step 7: Push to Google Sheets ----------------------
-        df_cost = pd.read_excel(filename)
+        df_cost = pd.read_excel(filename,sheet_name=1)
 
         sheet_new = client.open_by_key("1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs")
 
