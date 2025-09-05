@@ -20,6 +20,8 @@ on:
         description: 'End date (YYYY-MM-DD)'
         required: false
         default: ''  # If empty, script can use current date
+  schedule:
+    - cron: '0 * * * *'  # Runs every hour at minute 0
 
 jobs:
   run_reports:
