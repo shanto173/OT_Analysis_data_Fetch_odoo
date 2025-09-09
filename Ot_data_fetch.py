@@ -11,7 +11,7 @@ from datetime import datetime
 import os
 import argparse
 import pytz
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 # ========= CONFIG ==========
 ODOO_URL = os.getenv("ODOO_URL")
@@ -25,7 +25,7 @@ REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
 # -------- Dates (from GitHub Action inputs or default) --------
 
 local_tz = pytz.timezone("Asia/Dhaka")
-DATE_TO_DEFAULT = datetime.now(local_tz).strftime("%Y-%m-%d")
+DATE_TO_DEFAULT = (datetime.now(local_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--from_date", type=str, default="2025-07-26")
