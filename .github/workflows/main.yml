@@ -21,8 +21,7 @@ on:
         required: false
         default: ''  # If empty, script can use current date
   schedule:
-    - cron: '0 * * * *'  # Runs every hour at minute 0
-
+    - cron: '*/30 * * * *'  # every 30 minutes
 jobs:
   run_reports:
     runs-on: ubuntu-latest
