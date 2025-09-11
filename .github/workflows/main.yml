@@ -60,7 +60,7 @@ jobs:
             echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
           fi
 
-          # Default dates
+          # Set default FROM_DATE
           if [ -z "${{ github.event.inputs.from_date }}" ]; then
             FROM_DATE=$(date -d 'yesterday' +'%Y-%m-%d')
           else
@@ -68,6 +68,7 @@ jobs:
           fi
           echo "FROM_DATE=$FROM_DATE" >> $GITHUB_ENV
 
+          # Set default TO_DATE
           if [ -z "${{ github.event.inputs.to_date }}" ]; then
             TO_DATE=$(date -d 'yesterday' +'%Y-%m-%d')
           else
@@ -75,11 +76,12 @@ jobs:
           fi
           echo "TO_DATE=$TO_DATE" >> $GITHUB_ENV
 
-          # Determine if run all
+          # Determine if we run all scripts
           if [ "${{ github.event.inputs.script_choice }}" = "All" ] || [ -z "${{ github.event.inputs.script_choice }}" ]; then
             echo "RUN_ALL=true" >> $GITHUB_ENV
           else
             echo "RUN_ALL=false" >> $GITHUB_ENV
+          fi
 
       - name: Run OT Data Fetch
         if: env.SCRIPT == 'Ot_data_fetch.py' || env.RUN_ALL == 'true'
