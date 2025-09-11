@@ -21,7 +21,7 @@ on:
         required: false
         default: ''  # If empty, script can use current date
   schedule:
-    - cron: '*/30 * * * *'  # every 30 minutes
+    - cron: '0 * * * *'  # Runs every hour at minute 0
 
 jobs:
   run_reports:
@@ -29,10 +29,9 @@ jobs:
     env:
       ODOO_URL: ${{ secrets.ODOO_URL }}
       USERNAME: ${{ secrets.ODOO_USERNAME }}
-      PASSWORD: ${{ secrets.PASSWORD }}
+      PASSWORD: ${{ secrets.ODOO_PASSWORD }}
       ODOO_DB: ${{ secrets.ODOO_DB }}
       GOOGLE_CREDS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -54,26 +53,17 @@ jobs:
       - name: Determine script to run
         id: script
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            # Scheduled run defaults
+          if [ "${{ github.event.inputs.script_choice }}" = "All" ]; then
             echo "RUN_ALL=true" >> $GITHUB_ENV
-            echo "SCRIPT=All" >> $GITHUB_ENV
-            echo "FROM_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+          else
+            echo "RUN_ALL=false" >> $GITHUB_ENV
+          fi
+          echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
+          echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> $GITHUB_ENV
+          if [ -z "${{ github.event.inputs.to_date }}" ]; then
             echo "TO_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
           else
-            # Manual workflow_dispatch
-            if [ "${{ github.event.inputs.script_choice }}" = "All" ]; then
-              echo "RUN_ALL=true" >> $GITHUB_ENV
-            else
-              echo "RUN_ALL=false" >> $GITHUB_ENV
-            fi
-            echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
-            echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> $GITHUB_ENV
-            if [ -z "${{ github.event.inputs.to_date }}" ]; then
-              echo "TO_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-            else
-              echo "TO_DATE=${{ github.event.inputs.to_date }}" >> $GITHUB_ENV
-            fi
+            echo "TO_DATE=${{ github.event.inputs.to_date }}" >> $GITHUB_ENV
           fi
 
       - name: Run OT Data Fetch
@@ -84,4 +74,4 @@ jobs:
       - name: Run Purchase Orders Fetch
         if: env.SCRIPT == 'purchase_orders.py' || env.RUN_ALL == 'true'
         run: |
-          python purchase_orders.py --from_date $FROM_DATE --to_date $TO_DATE
+          python purchase_orders.py
