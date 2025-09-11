@@ -53,13 +53,17 @@ jobs:
       - name: Determine script to run
         id: script
         run: |
-          if [ "${{ github.event.inputs.script_choice }}" = "All" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "RUN_ALL=true" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.script_choice }}" = "All" ]; then
             echo "RUN_ALL=true" >> $GITHUB_ENV
           else
             echo "RUN_ALL=false" >> $GITHUB_ENV
           fi
+
           echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
           echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> $GITHUB_ENV
+
           if [ -z "${{ github.event.inputs.to_date }}" ]; then
             echo "TO_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
           else
