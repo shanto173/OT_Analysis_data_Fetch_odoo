@@ -7,11 +7,9 @@ from gspread_dataframe import set_with_dataframe
 from google.oauth2.service_account import Credentials
 import pytz
 import time
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import os
 import argparse
-import pytz
-from datetime import datetime, date, timedelta
 
 # ========= CONFIG ==========
 ODOO_URL = os.getenv("ODOO_URL")
@@ -23,7 +21,6 @@ MODEL = "attendance.pdf.report"
 REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
 
 # -------- Dates (from GitHub Action inputs or default) --------
-
 local_tz = pytz.timezone("Asia/Dhaka")
 DATE_TO_DEFAULT = (datetime.now(local_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -48,19 +45,117 @@ client = gspread.authorize(creds)
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
 
-# ---------------------- Step 1: Login
+# --------- Helper functions ----------
+
+def safe_post_json(session, url, payload=None, headers=None, retries=3, timeout=60):
+    """
+    POST json payload and return parsed JSON dict.
+    Retries on network/5xx or invalid JSON up to retries times.
+    Returns parsed json dict on success, or None on final failure.
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            resp = session.post(url, json=payload, headers=headers, timeout=timeout)
+        except requests.RequestException as e:
+            print(f"RequestException on attempt {attempt} for {url}: {e}")
+            if attempt < retries:
+                sleep_t = min(60, 2 ** attempt)
+                print(f" retrying in {sleep_t}s ...")
+                time.sleep(sleep_t)
+                continue
+            else:
+                print(" final failure (network).")
+                return None
+
+        if resp.status_code >= 500:
+            print(f"Server error {resp.status_code} on attempt {attempt} for {url}: {resp.text[:300]}")
+            if attempt < retries:
+                sleep_t = min(60, 2 ** attempt)
+                print(f" retrying in {sleep_t}s ...")
+                time.sleep(sleep_t)
+                continue
+            else:
+                print(" final failure (server error).")
+                return None
+
+        # try parse JSON
+        try:
+            data = resp.json()
+            return data
+        except ValueError:  # JSONDecodeError
+            print(f"Invalid JSON on attempt {attempt} for {url}. Status: {resp.status_code}. Response start:\n{resp.text[:500]}")
+            if attempt < retries:
+                sleep_t = min(60, 2 ** attempt)
+                print(f" retrying in {sleep_t}s ...")
+                time.sleep(sleep_t)
+                continue
+            else:
+                print(" final failure (invalid JSON).")
+                return None
+
+
+def download_report_with_retries(session, url, data, headers=None, max_attempts=5, timeout=60):
+    """
+    POST form/data to download endpoint. If returned content is XLSX (or ZIP/PK signature),
+    return resp. Otherwise retry up to max_attempts when status is 5xx or invalid content.
+    Returns resp on final attempt even if not valid (caller decides).
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = session.post(url, data=data, headers=headers, timeout=timeout)
+        except requests.RequestException as e:
+            print(f"Download RequestException on attempt {attempt}: {e}")
+            if attempt < max_attempts:
+                sleep_t = min(60, 2 ** attempt)
+                print(f" retrying download in {sleep_t}s ...")
+                time.sleep(sleep_t)
+                continue
+            else:
+                print(" final download failure (network).")
+                return None
+
+        content_type = resp.headers.get("content-type", "")
+        # heuristics: check content type or file bytes (xlsx files start with PK because they are ZIP)
+        is_xlsx_by_type = "openxmlformats-officedocument.spreadsheetml.sheet" in content_type.lower()
+        is_zip_header = isinstance(resp.content, (bytes, bytearray)) and resp.content.startswith(b"PK")
+
+        if resp.status_code == 200 and (is_xlsx_by_type or is_zip_header):
+            return resp
+
+        # If 5xx or Bad Gateway, retry
+        print(f"Attempt {attempt} - download returned status {resp.status_code}, content-type: {content_type}")
+        # show a snippet safely (text may be HTML)
+        try:
+            snippet = resp.text[:500]
+        except Exception:
+            snippet = repr(resp.content[:200])
+        print(" Response snippet:", snippet)
+
+        if attempt < max_attempts:
+            sleep_t = min(60, 2 ** attempt)
+            print(f" retrying download in {sleep_t}s ...")
+            time.sleep(sleep_t)
+            continue
+        else:
+            print(" final download attempt failed.")
+            return resp
+
+# ---------------------- Step 1: Login (with safe JSON handling)
 login_url = f"{ODOO_URL}/web/session/authenticate"
 login_payload = {
     "jsonrpc": "2.0",
     "params": {"db": DB, "login": USERNAME, "password": PASSWORD}
 }
-resp = session.post(login_url, json=login_payload)
-login_result = resp.json()
+login_result = safe_post_json(session, login_url, payload=login_payload, retries=3, timeout=30)
+if not login_result:
+    print("❌ Login failed (no JSON response). Exiting.")
+    raise SystemExit(1)
+
 uid = login_result.get("result", {}).get("uid")
 print("✅ Logged in, UID =", uid)
 
-# ---------------------- Step 2: Get CSRF token
-resp = session.get(f"{ODOO_URL}/web")
+# ---------------------- Step 2: Get CSRF token (safe)
+resp = session.get(f"{ODOO_URL}/web", timeout=30)
 match = re.search(r'var odoo = {\s*csrf_token: "([A-Za-z0-9]+)"', resp.text)
 csrf_token = match.group(1) if match else None
 print("✅ CSRF token =", csrf_token)
@@ -91,8 +186,11 @@ for company_id in COMPANY_IDS:
                                    "allowed_company_ids": [company_id], "default_is_company": False}}
         }
     }
-    resp = session.post(onchange_url, json=onchange_payload)
-    wizard_defaults = resp.json().get("result", {}).get("value", {})
+    onchange_data = safe_post_json(session, onchange_url, payload=onchange_payload, retries=3, timeout=30)
+    if not onchange_data:
+        print(f"❌ Failed to get onchange defaults for company {company_id}. Skipping this company.")
+        continue
+    wizard_defaults = onchange_data.get("result", {}).get("value", {})
     print("✅ Onchange defaults:", wizard_defaults)
 
     # ---------------------- Step 4: Save wizard
@@ -133,9 +231,22 @@ for company_id in COMPANY_IDS:
             }
         }
     }
-    resp = session.post(web_save_url, json=web_save_payload)
-    wizard_id = resp.json().get("result", [{}])[0].get("id")
+    web_save_data = safe_post_json(session, web_save_url, payload=web_save_payload, retries=3, timeout=30)
+    if not web_save_data:
+        print(f"❌ Failed to save wizard for company {company_id}. Skipping this company.")
+        continue
+
+    # extract wizard id robustly
+    wizard_id = None
+    result_obj = web_save_data.get("result")
+    if isinstance(result_obj, list) and len(result_obj) > 0 and isinstance(result_obj[0], dict):
+        wizard_id = result_obj[0].get("id")
+    elif isinstance(result_obj, dict):
+        wizard_id = result_obj.get("id")
     print("✅ Wizard saved, ID =", wizard_id)
+    if not wizard_id:
+        print(f"❌ No wizard_id returned for company {company_id}. Skipping.")
+        continue
 
     # ---------------------- Step 5: Call report button
     call_button_url = f"{ODOO_URL}/web/dataset/call_button"
@@ -151,12 +262,15 @@ for company_id in COMPANY_IDS:
                                    "uid": uid, "allowed_company_ids": [company_id], "default_is_company": False}}
         }
     }
-    resp = session.post(call_button_url, json=call_button_payload)
-    report_info = resp.json().get("result", {})
-    report_name = report_info.get("report_name")
+    call_button_data = safe_post_json(session, call_button_url, payload=call_button_payload, retries=3, timeout=60)
+    if not call_button_data:
+        print(f"❌ Call button failed for company {company_id}. Skipping.")
+        continue
+    report_info = call_button_data.get("result", {})
+    report_name = report_info.get("report_name") or report_info.get("report")
     print("✅ Report generated:", report_name)
 
-    # ---------------------- Step 6: Download report
+    # ---------------------- Step 6: Download report (with retry up to 5 attempts)
     download_url = f"{ODOO_URL}/report/download"
     options = {
         "date_from": DATE_FROM,
@@ -189,17 +303,22 @@ for company_id in COMPANY_IDS:
     }
     headers = {"X-CSRF-Token": csrf_token, "Referer": f"{ODOO_URL}/web"}
 
-    resp = session.post(download_url, data=download_payload, headers=headers, timeout=60)
-    company_label = "Zipper" if company_id == 1 else "Metal_Trims"
+    print(f"Attempting download for company {company_id} (up to 5 attempts)...")
+    resp = download_report_with_retries(session, download_url, data=download_payload, headers=headers, max_attempts=5, timeout=120)
 
-    if resp.status_code == 200 and "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in resp.headers.get("content-type", ""):
+    if resp and resp.status_code == 200 and ("openxmlformats-officedocument.spreadsheetml.sheet" in resp.headers.get("content-type", "").lower() or resp.content.startswith(b"PK")):
+        company_label = "Zipper" if company_id == 1 else "Metal_Trims"
         filename = f"ot_analysis_{company_label}_{DATE_FROM}_to_{DATE_TO}.xlsx"
         with open(filename, "wb") as f:
             f.write(resp.content)
         print(f"✅ Report downloaded as {filename}")
 
         # ---------------------- Step 7: Push to Google Sheets ----------------------
-        df_cost = pd.read_excel(filename,sheet_name=1)
+        try:
+            df_cost = pd.read_excel(filename, sheet_name=1)
+        except Exception as e:
+            print(f"❌ Failed to read downloaded excel for {company_label}: {e}")
+            continue
 
         sheet_new = client.open_by_key("1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs")
 
@@ -218,9 +337,20 @@ for company_id in COMPANY_IDS:
             set_with_dataframe(worksheet_new, df_cost, row=1, col=2)
             print(f"✅ Data pasted to Google Sheet ({company_label}).")
 
-            local_tz = pytz.timezone("Asia/Dhaka")
             local_time = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
             worksheet_new.update("E1", [[f"{local_time}"]])
             print(f"✅ Timestamp updated for {company_label}: {local_time}")
+
     else:
-        print("❌ Download failed", resp.status_code, resp.text[:500])
+        # If resp is None or failed after retries, just log and continue to next company
+        status = resp.status_code if resp is not None else "No response"
+        snippet = ""
+        try:
+            snippet = resp.text[:500]
+        except Exception:
+            snippet = "<binary content or no response>"
+        print(f"❌ Download failed after retries for company {company_id}. Status: {status}. Snippet: {snippet}")
+        print(" moving to next company...\n")
+        continue
+
+print("\nAll companies processed.")
