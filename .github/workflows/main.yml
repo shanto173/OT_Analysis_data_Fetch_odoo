@@ -13,11 +13,11 @@ on:
           - Ot_data_fetch.py
           - purchase_orders.py
       from_date:
-        description: 'Start date (YYYY-MM-DD)'
+        description: 'Start date (YYYY-MM-DD) [ignored, fixed to 2025-07-26]'
         required: false
-        default: '2025-07-26'
+        default: ''
       to_date:
-        description: 'End date (YYYY-MM-DD)'
+        description: 'End date (YYYY-MM-DD) [ignored, always yesterday]'
         required: false
         default: ''
   schedule:
@@ -60,20 +60,12 @@ jobs:
             echo "SCRIPT=${{ github.event.inputs.script_choice }}" >> $GITHUB_ENV
           fi
 
-          # Set default FROM_DATE
-          if [ -z "${{ github.event.inputs.from_date }}" ]; then
-            FROM_DATE=$(date -d 'yesterday' +'%Y-%m-%d')
-          else
-            FROM_DATE=${{ github.event.inputs.from_date }}
-          fi
+          # FROM_DATE is fixed to 2025-07-26
+          FROM_DATE="2025-07-26"
           echo "FROM_DATE=$FROM_DATE" >> $GITHUB_ENV
 
-          # Set default TO_DATE
-          if [ -z "${{ github.event.inputs.to_date }}" ]; then
-            TO_DATE=$(date -d 'yesterday' +'%Y-%m-%d')
-          else
-            TO_DATE=${{ github.event.inputs.to_date }}
-          fi
+          # TO_DATE is yesterday
+          TO_DATE=$(date -d 'yesterday' +'%Y-%m-%d')
           echo "TO_DATE=$TO_DATE" >> $GITHUB_ENV
 
           # Determine if we run all scripts
