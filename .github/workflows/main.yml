@@ -20,8 +20,8 @@ on:
         description: 'End date (YYYY-MM-DD) [ignored, always yesterday]'
         required: false
         default: ''
-  schedule:
-    - cron: '0 * * * *'  # Runs every hour at minute 0
+  # schedule:
+  #   - cron: '0 * * * *'  # Runs every hour at minute 0
 
 jobs:
   run_reports:
