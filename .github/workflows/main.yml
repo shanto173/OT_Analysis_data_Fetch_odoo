@@ -21,7 +21,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 */4 * * *'
 
 jobs:
   run_reports:
