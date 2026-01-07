@@ -141,6 +141,79 @@ def download_report_with_retries(session, url, data, headers=None, max_attempts=
             print(" final download attempt failed.")
             return resp
 
+
+def smart_fix_dates_in_dataframe(df, date_from_str, date_to_str):
+    """
+    Intelligently fix dates in the dataframe based on the date range.
+    - Converts date columns to proper datetime format with correct years
+    - Uses the date_from and date_to to determine the correct year for each month
+    """
+    from_date = pd.to_datetime(date_from_str)
+    to_date = pd.to_datetime(date_to_str)
+    
+    print(f"🗓️ Date range: {from_date.strftime('%Y-%m-%d')} to {to_date.strftime('%Y-%m-%d')}")
+    
+    total_fixes = 0
+    
+    # Month name mapping
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    
+    # Iterate through all columns
+    for col in df.columns:
+        if df[col].dtype == 'object':  # String columns
+            # Check if this column contains date-like strings
+            sample = df[col].dropna().astype(str).head(10)
+            
+            # Look for patterns like "26 Jul Fri" or "05 Jan Mon"
+            date_pattern = r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\w{3}'
+            
+            has_dates = any(re.search(date_pattern, str(val), re.IGNORECASE) for val in sample)
+            
+            if has_dates:
+                print(f"🔍 Found date column: '{col}'")
+                fixed_values = []
+                
+                for idx, val in df[col].items():
+                    if pd.isna(val):
+                        fixed_values.append(val)
+                        continue
+                    
+                    val_str = str(val)
+                    match = re.search(date_pattern, val_str, re.IGNORECASE)
+                    
+                    if match:
+                        # Extract day and month
+                        parts = val_str.split()
+                        day = parts[0]
+                        month = parts[1]
+                        
+                        # Determine correct year based on month
+                        month_num = month_names.index(month) + 1 if month in month_names else 1
+                        
+                        # If month is >= from_date.month, use from_date.year
+                        # Otherwise use to_date.year (for wrap-around like Jul-Dec 2025, Jan 2026)
+                        if from_date.year == to_date.year:
+                            year = from_date.year
+                        elif month_num >= from_date.month:
+                            year = from_date.year
+                        else:
+                            year = to_date.year
+                        
+                        # Reconstruct the date string with correct year
+                        new_val = f"{day} {month} {year} {parts[2] if len(parts) > 2 else ''}"
+                        fixed_values.append(new_val.strip())
+                        total_fixes += 1
+                    else:
+                        fixed_values.append(val)
+                
+                df[col] = fixed_values
+                print(f"  ✅ Fixed {total_fixes} date values in column '{col}'")
+    
+    print(f"📊 Total date fixes applied: {total_fixes}")
+    return df
+
+
 # ---------------------- Step 1: Login (with safe JSON handling)
 login_url = f"{ODOO_URL}/web/session/authenticate"
 login_payload = {
@@ -319,42 +392,17 @@ for company_id in COMPANY_IDS:
             # Read the Excel file
             df_cost = pd.read_excel(filename, sheet_name=1)
             
-            print(f"DataFrame shape: {df_cost.shape}")
-            print(f"Columns: {df_cost.columns.tolist()}")
-            print(f"First 3 rows BEFORE fixing:\n{df_cost.head(3)}")
+            print(f"\n📊 DataFrame shape: {df_cost.shape}")
+            print(f"📋 First few columns: {df_cost.columns.tolist()[:10]}")
+            print(f"\n🔍 Sample of row 2 (date header row):")
+            print(df_cost.iloc[2, :20].to_string())
             
-            # Fix ALL columns that might contain dates
-            for col in df_cost.columns:
-                col_lower = str(col).lower()
-                
-                # Check if column name suggests it's a date
-                if 'date' in col_lower:
-                    try:
-                        # Convert to datetime, coercing errors
-                        df_cost[col] = pd.to_datetime(df_cost[col], errors='coerce')
-                        
-                        # Fix any 2026 years to 2025
-                        if df_cost[col].notna().any():
-                            mask_2026 = df_cost[col].dt.year == 2026
-                            if mask_2026.any():
-                                print(f"⚠️ Fixing {mask_2026.sum()} dates in column '{col}' from 2026 to 2025")
-                                df_cost.loc[mask_2026, col] = df_cost.loc[mask_2026, col] - pd.DateOffset(years=1)
-                            
-                            # Convert to string format for Google Sheets (YYYY-MM-DD)
-                            df_cost[col] = df_cost[col].dt.strftime('%Y-%m-%d')
-                            
-                    except Exception as e:
-                        print(f"Could not process date column '{col}': {e}")
-                
-                # Check string columns for date-like content
-                elif df_cost[col].dtype == 'object':
-                    # Sample first few non-null values
-                    sample = df_cost[col].dropna().astype(str).head(10)
-                    if any('2026' in str(val) for val in sample):
-                        print(f"⚠️ Found '2026' in string column '{col}', replacing with '2025'")
-                        df_cost[col] = df_cost[col].astype(str).str.replace('2026', '2025', regex=False)
+            # Smart fix dates based on the date range
+            print(f"\n🔧 Applying smart date fixing...")
+            df_cost = smart_fix_dates_in_dataframe(df_cost, DATE_FROM, DATE_TO)
             
-            print(f"First 3 rows AFTER fixing:\n{df_cost.head(3)}")
+            print(f"\n✅ Sample after fixing:")
+            print(df_cost.iloc[2, :20].to_string())
             
             # Open Google Sheet
             sheet_new = client.open_by_key("1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs")
@@ -392,4 +440,4 @@ for company_id in COMPANY_IDS:
         print(" moving to next company...\n")
         continue
 
-print("\nAll companies processed.")
+print("\n✅ All companies processed.")
