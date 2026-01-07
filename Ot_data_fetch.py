@@ -316,56 +316,76 @@ for company_id in COMPANY_IDS:
 
         # ---------------------- Step 7: Push to Google Sheets ----------------------
         try:
+            # Read the Excel file
             df_cost = pd.read_excel(filename, sheet_name=1)
             
-            # Debug: Print first few rows and column names to identify date columns
             print(f"DataFrame shape: {df_cost.shape}")
             print(f"Columns: {df_cost.columns.tolist()}")
-            print(f"First 3 rows:\n{df_cost.head(3)}")
+            print(f"First 3 rows BEFORE fixing:\n{df_cost.head(3)}")
             
-            # Fix date columns if they exist (adjust column names as needed)
-            date_columns = [col for col in df_cost.columns if 'date' in col.lower() or 'Date' in str(col)]
-            for col in date_columns:
-                if pd.api.types.is_datetime64_any_dtype(df_cost[col]):
-                    # If dates are being read as 2026 instead of 2025, subtract 1 year
-                    df_cost[col] = pd.to_datetime(df_cost[col])
-                    # Check if any dates are in 2026 when they should be 2025
-                    if (df_cost[col].dt.year == 2026).any():
-                        print(f"⚠️ Fixing year in column '{col}' from 2026 to 2025")
-                        mask = df_cost[col].dt.year == 2026
-                        df_cost.loc[mask, col] = df_cost.loc[mask, col] - pd.DateOffset(years=1)
+            # Fix ALL columns that might contain dates
+            for col in df_cost.columns:
+                col_lower = str(col).lower()
+                
+                # Check if column name suggests it's a date
+                if 'date' in col_lower:
+                    try:
+                        # Convert to datetime, coercing errors
+                        df_cost[col] = pd.to_datetime(df_cost[col], errors='coerce')
+                        
+                        # Fix any 2026 years to 2025
+                        if df_cost[col].notna().any():
+                            mask_2026 = df_cost[col].dt.year == 2026
+                            if mask_2026.any():
+                                print(f"⚠️ Fixing {mask_2026.sum()} dates in column '{col}' from 2026 to 2025")
+                                df_cost.loc[mask_2026, col] = df_cost.loc[mask_2026, col] - pd.DateOffset(years=1)
+                            
+                            # Convert to string format for Google Sheets (YYYY-MM-DD)
+                            df_cost[col] = df_cost[col].dt.strftime('%Y-%m-%d')
+                            
+                    except Exception as e:
+                        print(f"Could not process date column '{col}': {e}")
+                
+                # Check string columns for date-like content
+                elif df_cost[col].dtype == 'object':
+                    # Sample first few non-null values
+                    sample = df_cost[col].dropna().astype(str).head(10)
+                    if any('2026' in str(val) for val in sample):
+                        print(f"⚠️ Found '2026' in string column '{col}', replacing with '2025'")
+                        df_cost[col] = df_cost[col].astype(str).str.replace('2026', '2025', regex=False)
+            
+            print(f"First 3 rows AFTER fixing:\n{df_cost.head(3)}")
+            
+            # Open Google Sheet
+            sheet_new = client.open_by_key("1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs")
+
+            if company_id == 1:  # Zipper
+                worksheet_new = sheet_new.worksheet("ZIP_OT_DATA")
+                clear_range = "B1:IA1000"
+            else:  # Metal Trims
+                worksheet_new = sheet_new.worksheet("MT_OT_DATA")
+                clear_range = "B1:IA1000"
+            
+            # Clear existing data
+            worksheet_new.batch_clear([clear_range])
+            print(f"✅ Cleared range {clear_range}")
+            
+            # Write dataframe to Google Sheets
+            set_with_dataframe(worksheet_new, df_cost, row=1, col=2, include_index=False, include_column_header=True)
+            print(f"✅ Data pushed to Google Sheets for company {company_id}")
             
         except Exception as e:
-            print(f"❌ Failed to read downloaded excel for {company_label}: {e}")
+            print(f"❌ Failed to process/upload data for company {company_id}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
-
-        sheet_new = client.open_by_key("1-kBuln5CnKucuHqYG4vvgttJ8DqeJALvr4TjAYuVkXs")
-
-        if company_id == 1:  # Zipper
-            worksheet_new = sheet_new.worksheet("ZIP_OT_DATA")
-            clear_range = "B1:IA1000"
-        else:  # Metal Trims
-            worksheet_new = sheet_new.worksheet("MT_OT_DATA")
-            clear_range = "B1:HI1000"
-
-        if df_cost.empty:
-            print(f"Skip: DataFrame is empty for {company_label}, not pasting.")
-        else:
-            worksheet_new.batch_clear([clear_range])
-            time.sleep(4)
-            set_with_dataframe(worksheet_new, df_cost, row=1, col=2)
-            print(f"✅ Data pasted to Google Sheet ({company_label}).")
-
-            local_time = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
-            worksheet_new.update("E1", [[f"{local_time}"]])
-            print(f"✅ Timestamp updated for {company_label}: {local_time}")
-
+    
     else:
-        # If resp is None or failed after retries, just log and continue to next company
+        # If download failed after retries
         status = resp.status_code if resp is not None else "No response"
         snippet = ""
         try:
-            snippet = resp.text[:500]
+            snippet = resp.text[:500] if resp else "<no response>"
         except Exception:
             snippet = "<binary content or no response>"
         print(f"❌ Download failed after retries for company {company_id}. Status: {status}. Snippet: {snippet}")
