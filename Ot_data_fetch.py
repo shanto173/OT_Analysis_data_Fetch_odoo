@@ -22,10 +22,11 @@ REPORT_BUTTON_METHOD = "action_generate_xlsx_report"
 
 # -------- Dates (from GitHub Action inputs or default) --------
 local_tz = pytz.timezone("Asia/Dhaka")
+DATE_FROM_DEFAULT = "2025-07-26"
 DATE_TO_DEFAULT = (datetime.now(local_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--from_date", type=str, default="2025-07-26")
+parser.add_argument("--from_date", type=str, default=DATE_FROM_DEFAULT)
 parser.add_argument("--to_date", type=str, default=DATE_TO_DEFAULT)
 args = parser.parse_args()
 
@@ -316,6 +317,24 @@ for company_id in COMPANY_IDS:
         # ---------------------- Step 7: Push to Google Sheets ----------------------
         try:
             df_cost = pd.read_excel(filename, sheet_name=1)
+            
+            # Debug: Print first few rows and column names to identify date columns
+            print(f"DataFrame shape: {df_cost.shape}")
+            print(f"Columns: {df_cost.columns.tolist()}")
+            print(f"First 3 rows:\n{df_cost.head(3)}")
+            
+            # Fix date columns if they exist (adjust column names as needed)
+            date_columns = [col for col in df_cost.columns if 'date' in col.lower() or 'Date' in str(col)]
+            for col in date_columns:
+                if pd.api.types.is_datetime64_any_dtype(df_cost[col]):
+                    # If dates are being read as 2026 instead of 2025, subtract 1 year
+                    df_cost[col] = pd.to_datetime(df_cost[col])
+                    # Check if any dates are in 2026 when they should be 2025
+                    if (df_cost[col].dt.year == 2026).any():
+                        print(f"⚠️ Fixing year in column '{col}' from 2026 to 2025")
+                        mask = df_cost[col].dt.year == 2026
+                        df_cost.loc[mask, col] = df_cost.loc[mask, col] - pd.DateOffset(years=1)
+            
         except Exception as e:
             print(f"❌ Failed to read downloaded excel for {company_label}: {e}")
             continue
