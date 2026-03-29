@@ -230,8 +230,17 @@ print("✅ Logged in, UID =", uid)
 
 # ---------------------- Step 2: Get CSRF token (safe)
 resp = session.get(f"{ODOO_URL}/web", timeout=30)
-match = re.search(r'var odoo = {\s*csrf_token: "([A-Za-z0-9]+)"', resp.text)
-csrf_token = match.group(1) if match else None
+# Try multiple patterns to handle different Odoo versions
+csrf_token = None
+for pattern in [
+    r'"csrf_token"\s*:\s*"([^"]+)"',
+    r"csrf_token:\s*['\"]([^'\"]+)['\"]",
+    r'var odoo\s*=\s*\{[^}]*csrf_token:\s*"([^"]+)"',
+]:
+    match = re.search(pattern, resp.text)
+    if match:
+        csrf_token = match.group(1)
+        break
 print("✅ CSRF token =", csrf_token)
 
 # ---------------------- Iterate over companies

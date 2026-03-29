@@ -2,3 +2,6 @@
 /encoded.txt
 /.env
 /gcreds.json
+__pycache__/
+*.pyc
+*.pyo
