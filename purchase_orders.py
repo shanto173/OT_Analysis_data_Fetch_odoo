@@ -4,7 +4,8 @@ import requests
 import pandas as pd
 import glob
 import time
-from datetime import datetime
+import argparse
+from datetime import datetime, timedelta
 import pytz
 import logging as log
 
@@ -16,6 +17,22 @@ from google.oauth2 import service_account
 # Logging
 # ----------------------------
 log.basicConfig(level=log.INFO)
+
+# ----------------------------
+# Date arguments
+# ----------------------------
+local_tz = pytz.timezone("Asia/Dhaka")
+_default_from = "2024-04-01"
+_default_to = (datetime.now(local_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--from_date", type=str, default=_default_from)
+parser.add_argument("--to_date", type=str, default=_default_to)
+args = parser.parse_args()
+
+# Normalize to YYYY-MM-DD format to ensure clean date-only strings
+FROM_DATE = datetime.strptime(args.from_date[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+TO_DATE = datetime.strptime(args.to_date[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
 
 # ----------------------------
 # Odoo credentials (from GitHub secrets or env)
@@ -76,7 +93,9 @@ log.info(f"✅ Logged in UID: {uid}")
 # ----------------------------
 # Step 2: Fetch purchase.order data (paginated)
 # ----------------------------
+log.info(f"📅 Fetching purchase orders from {FROM_DATE} to {TO_DATE}")
 fields_list = list(FIELDS.keys())
+domain = ["&", ["create_date", ">=", FROM_DATE], ["create_date", "<=", TO_DATE + " 23:59:59"]]
 limit = 1000
 offset = 0
 all_records = []
@@ -89,7 +108,7 @@ while True:
         "params": {
             "model": "purchase.order",
             "method": "search_read",
-            "args": [],
+            "args": [domain],
             "kwargs": {
                 "fields": fields_list,
                 "limit": limit,
@@ -182,7 +201,6 @@ else:
     log.info("✅ Data pasted to Google Sheet (PO_Status_Data).")
 
     # Add timestamp
-    local_tz = pytz.timezone('Asia/Dhaka')
     local_time = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
     worksheet.update("AC1", [[f"{local_time}"]])
     log.info(f"✅ Timestamp updated: {local_time}")
